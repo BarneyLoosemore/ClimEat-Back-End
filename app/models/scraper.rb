@@ -37,7 +37,8 @@ class Scraper
 
             created_recipe = Recipe.create(name: recipe[:name], servings: recipe[:servings], website: "BBC")
 
-            binding.pry
+            # recipe[:ingredients].each{|ingredient| puts ingredient }
+            recipe[:ingredients].each{|ingredient| self.create_recipe_ingredient(ingredient, created_recipe.id)}
 
             recipe[:instructions].each{ |instruction| 
                 Instruction.create(
@@ -49,12 +50,36 @@ class Scraper
         }
     end
 
+    
+    def create_recipe_ingredient (ingredient_content, recipe_id)
 
+        ingredient = self.find_ingredient(ingredient_content)
+
+        amount = self.find_amount(ingredient_content)
+
+        metric_obj = self.find_metric(ingredient_content)
+        kg = metric_obj[:kg]
+        multiplier = metric_obj[:multiplier]
+
+        ingredient_kgs = amount*kg*multiplier
+
+        RecipeIngredient.create( recipe_id: recipe_id, ingredient_id: ingredient[0].id, ingredient_kgs: ingredient_kgs, content: ingredient_content )
+    end
+
+
+    def find_ingredient (ingredient_content)
+        found_ingredient = Ingredient.all.select{|i| ingredient_content.downcase.include?(i.name.downcase)}
+        if found_ingredient.length == 0
+            found_ingredient = Ingredient.find(118)
+        end
+        return found_ingredient
+    end
 
     def find_amount (ingredient_content)
         ingr_word_nums = ingredient_content.split(' ').join('-').split('-').map{|i| i.to_i}.sort
         highest_amount = ingr_word_nums.last
         new_ingredient_string = ingr_word_nums.map{|num| num == 0}
+        puts highest_amount
         return highest_amount
     end
 
@@ -77,11 +102,19 @@ class Scraper
             niche_metric = niche_metrics.select{|metric| ingredient_content.downcase.include?(metric[:name])}.sort_by{|metric| metric[:name].length}.last 
             size_metric = size_metric.select{|metric| ingredient_content.downcase.include?(metric[:name])}.sort_by{|metric| metric[:name].length}.last 
             if niche_metric && size_metric 
+                puts niche_metric 
+                puts size_metric
                 return {kg: niche_metric[:kg], multiplier: size_metric[:multiplier]}
             elsif niche_metric 
+                puts niche_metric
                 return {kg: niche_metric[:kg], multiplier: 1} 
-            else 
-                return {kg: "ingredient weight here", multiplier: size_metric[:multiplier]}
+            elsif size_metric 
+                puts size_metric
+                # kg to be changed based on average weight of 1 ingredient
+                return {kg: 0.2, multiplier: size_metric[:multiplier]}
+            else
+                # kg to be changed based on average weight of 1 ingredient
+                return {kg: 0.2, multiplier: 1}
             end
         else 
             return {kg: metric[:kg], multiplier: 1}
