@@ -53,10 +53,9 @@ class Scraper
             name: @browser.h1(class: "recipe-header__title").innertext,
             ingredients: self.find_recipe_ingredients(),
             instructions: @browser.ol(class: "method__list").map{ |i| i.innertext },
-            servings: @browser.section(class: ["recipe-details__item", "recipe-details__item--servings"]).span(class: "recipe-details__text").innertext.scan(/\d/).join('')
-        }
+            servings: @browser.section(class: ["recipe-details__item", "recipe-details__item--servings"]).span(class: "recipe-details__text").text.split(' ').join('-').split('-').map{|i| i.to_i}.sort.last        }
 
-        created_recipe = Recipe.create(name: recipe[:name], servings: recipe[:servings], website: "BBC")
+        created_recipe = Recipe.create(name: recipe[:name], servings: recipe[:servings], website: "BBC", image_url: @browser.img(itemprop: "image").src)
 
         # recipe[:ingredients].each{|ingredient| puts ingredient }
         recipe[:ingredients].each{|ingredient| self.create_recipe_ingredient(ingredient, created_recipe.id)}
@@ -98,13 +97,12 @@ class Scraper
         void = void_ingredients.select{|i| ingredient_content.downcase.include?(i)}
 
         if void.length > 0
-            return [Ingredient.find(120)]
+            return [Ingredient.all.last]
         end
 
-        if ingredient_content.downcase.include?()
         found_ingredient = Ingredient.all.select{|i| ingredient_content.downcase.include?(i.name.downcase)}
         if found_ingredient.length == 0
-            found_ingredient = [Ingredient.find(120)]
+            found_ingredient = [Ingredient.all.last]
         end
 
         if found_ingredient.length > 1
@@ -124,9 +122,10 @@ class Scraper
     def find_metric (ingredient_content)
 
         ingredient_content = ingredient_content.tr("0-9", "")
+        ingredient_content = ingredient_content.tr(")", "")
 
         standard_metrics = [{name: "gram", kg: 0.001}, {name: "ml", kg: 0.001}, {name: "millilitre", kg: 0.001}, {name: "milliliter", kg: 0.001}, {name: "liter", kg: 0.001}, {name: "kg", kg: 1}, {name: "kilo", kg: 1}, {name: "kilogram", kg: 1}]
-        niche_metrics = [{name: "breast", kg: 0.2}, {name: "thigh", kg: 0.15}, {name: "drumstick", kg: 0.10}, {name: "leg", kg: 2.00}, {name: "steak", kg: 0.20}, {name: "chop", kg: 0.15}, {name: "wing", kg: 0.09}]
+        niche_metrics = [{name: "breast", kg: 0.2}, {name: "thigh", kg: 0.15}, {name: "drumstick", kg: 0.10}, {name: "leg", kg: 2.00}, {name: "steak", kg: 0.20}, {name: "chop", kg: 0.15}, {name: "wing", kg: 0.09}, {name: "sausage", kg: 0.08}]
         size_metric = [{name: "small", multiplier: 0.7}, {name: "medium", multiplier: 1}, {name: "large", multiplier: 1.3}]
 
         grams = ingredient_content.split(' ').join('-').split('-').select{|w| w == 'g'}
@@ -158,7 +157,7 @@ class Scraper
             return {kg: metric[:kg], multiplier: 1}
         end
     end
- 
-
 end
+
+ 
 
