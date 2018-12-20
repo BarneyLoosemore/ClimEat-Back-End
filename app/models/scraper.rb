@@ -3,6 +3,8 @@ class Scraper
     def initialize (ingredients)
         @ingredients = ingredients
         @browser = Watir::Browser.new :chrome
+        #  headless: true
+        @browser.window.resize_to(1200, 1000)
         @browser.goto("https://www.bbcgoodfood.com/recipes")
     end
 
@@ -11,6 +13,7 @@ class Scraper
     end
 
     def load_recipes (ingredient)
+        @browser.goto("https://www.bbcgoodfood.com/recipes")
         input = @browser.text_field(class: ["metadrift-suggestions__search__input", "ui-autocomplete-input"])
         button = @browser.div(class: "metadrift-suggestions__search__submit")
         input.set ingredient
@@ -20,41 +23,101 @@ class Scraper
         parse_recipes()
     end
 
+
     def parse_recipes 
         recipe_links = @browser.links(class: "metadrift-teaser-item__title__link").map{ |recipe| recipe.href }
 
         recipe_links.each{ |link|
-
-            @browser.goto(link)
-            sleep 3
-
-            recipe = {
-                name: @browser.h1(class: "recipe-header__title").innertext,
-                ingredients: @browser.ul(class: "ingredients-list__group").map{ |i| i.innertext },
-                instructions: @browser.ol(class: "method__list").map{ |i| i.innertext },
-                servings: @browser.section(class: ["recipe-details__item", "recipe-details__item--servings"]).span(class: "recipe-details__text").innertext.scan(/\d/).join('')
-            }
-
-            created_recipe = Recipe.create(name: recipe[:name], servings: recipe[:servings], website: "BBC")
-
-            binding.pry
-
-            recipe[:instructions].each{ |instruction| 
-                Instruction.create(
-                    recipe_id: created_recipe.id, 
-                    index: recipe[:instructions].index(instruction) + 1, 
-                    content: instruction)
-            }
-
+            run(link)
         }
     end
 
 
+    def run (link) 
+        begin
+            result = Timeout::timeout(30) do
+                parse_recipe(link)
+            end
+        rescue Timeout::Error
+            parse_recipe(link)
+        end
+    end
+
+
+    def parse_recipe (link) 
+
+        @browser.goto(link)
+        sleep 3
+
+        recipe = {
+            name: @browser.h1(class: "recipe-header__title").innertext,
+            ingredients: self.find_recipe_ingredients(),
+            instructions: @browser.ol(class: "method__list").map{ |i| i.innertext },
+            servings: @browser.section(class: ["recipe-details__item", "recipe-details__item--servings"]).span(class: "recipe-details__text").innertext.scan(/\d/).join('')
+        }
+
+        created_recipe = Recipe.create(name: recipe[:name], servings: recipe[:servings], website: "BBC")
+
+        # recipe[:ingredients].each{|ingredient| puts ingredient }
+        recipe[:ingredients].each{|ingredient| self.create_recipe_ingredient(ingredient, created_recipe.id)}
+
+        recipe[:instructions].each{ |instruction| 
+            Instruction.create(
+                recipe_id: created_recipe.id, 
+                index: recipe[:instructions].index(instruction) + 1, 
+                content: instruction)
+        }
+
+    end
+
+    
+    def create_recipe_ingredient (ingredient_content, recipe_id)
+
+        ingredient = self.find_ingredient(ingredient_content)
+
+        amount = self.find_amount(ingredient_content)
+
+        metric_obj = self.find_metric(ingredient_content)
+        kg = metric_obj[:kg]
+        multiplier = metric_obj[:multiplier]
+
+        ingredient_kgs = amount*kg*multiplier
+
+        RecipeIngredient.create( recipe_id: recipe_id, ingredient_id: ingredient[0].id, ingredient_kgs: ingredient_kgs, content: ingredient_content )
+    end
+
+    def find_recipe_ingredients 
+        @browser.ul(class: "ingredients-list__group").map{ |i| i.innertext }
+    end
+
+
+    def find_ingredient (ingredient_content)
+
+        void_ingredients = ["butter bean", "butternut", "peel", "sea salt", "stock"]
+
+        void = void_ingredients.select{|i| ingredient_content.downcase.include?(i)}
+
+        if void.length > 0
+            return [Ingredient.find(120)]
+        end
+
+        if ingredient_content.downcase.include?()
+        found_ingredient = Ingredient.all.select{|i| ingredient_content.downcase.include?(i.name.downcase)}
+        if found_ingredient.length == 0
+            found_ingredient = [Ingredient.find(120)]
+        end
+
+        if found_ingredient.length > 1
+            found_ingredient = found_ingredient.sort{|ingr| ingr.name.length }
+        end
+        return found_ingredient
+    end
 
     def find_amount (ingredient_content)
         ingr_word_nums = ingredient_content.split(' ').join('-').split('-').map{|i| i.to_i}.sort
         highest_amount = ingr_word_nums.last
         new_ingredient_string = ingr_word_nums.map{|num| num == 0}
+        puts highest_amount
         return highest_amount
     end
 
@@ -62,7 +125,7 @@ class Scraper
 
         ingredient_content = ingredient_content.tr("0-9", "")
 
-        standard_metrics = [{name: "gram", kg: 0.001}, {name: "kg", kg: 1}, {name: "kilo", kg: 1}, {name: "kilogram", kg: 1}]
+        standard_metrics = [{name: "gram", kg: 0.001}, {name: "ml", kg: 0.001}, {name: "millilitre", kg: 0.001}, {name: "milliliter", kg: 0.001}, {name: "liter", kg: 0.001}, {name: "kg", kg: 1}, {name: "kilo", kg: 1}, {name: "kilogram", kg: 1}]
         niche_metrics = [{name: "breast", kg: 0.2}, {name: "thigh", kg: 0.15}, {name: "drumstick", kg: 0.10}, {name: "leg", kg: 2.00}, {name: "steak", kg: 0.20}, {name: "chop", kg: 0.15}, {name: "wing", kg: 0.09}]
         size_metric = [{name: "small", multiplier: 0.7}, {name: "medium", multiplier: 1}, {name: "large", multiplier: 1.3}]
 
@@ -77,11 +140,19 @@ class Scraper
             niche_metric = niche_metrics.select{|metric| ingredient_content.downcase.include?(metric[:name])}.sort_by{|metric| metric[:name].length}.last 
             size_metric = size_metric.select{|metric| ingredient_content.downcase.include?(metric[:name])}.sort_by{|metric| metric[:name].length}.last 
             if niche_metric && size_metric 
+                puts niche_metric 
+                puts size_metric
                 return {kg: niche_metric[:kg], multiplier: size_metric[:multiplier]}
             elsif niche_metric 
+                puts niche_metric
                 return {kg: niche_metric[:kg], multiplier: 1} 
-            else 
-                return {kg: "ingredient weight here", multiplier: size_metric[:multiplier]}
+            elsif size_metric 
+                puts size_metric
+                # kg to be changed based on average weight of 1 ingredient
+                return {kg: 0.2, multiplier: size_metric[:multiplier]}
+            else
+                # kg to be changed based on average weight of 1 ingredient
+                return {kg: 0.2, multiplier: 1}
             end
         else 
             return {kg: metric[:kg], multiplier: 1}
@@ -90,3 +161,4 @@ class Scraper
  
 
 end
+
