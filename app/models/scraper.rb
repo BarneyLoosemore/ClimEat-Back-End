@@ -78,6 +78,14 @@ class Scraper
 
         metric_obj = self.find_metric(ingredient_content)
         kg = metric_obj[:kg]
+
+        # if metric is kg, set the amount to the lowest found number - 
+        # this accounts for if the ingredient content includes higher amounts..
+        # ..that refer to things other than the kg total (e.g. "around 1kg/2lb or 4oz")
+        if kg == 1
+            amount = self.find_lowest_amount(ingredient_content)
+        end
+
         multiplier = metric_obj[:multiplier]
 
         ingredient_kgs = amount*kg*multiplier
@@ -114,10 +122,15 @@ class Scraper
     def find_amount (ingredient_content)
         ingr_word_nums = ingredient_content.split(' ').join('-').split('-').map{|i| i.to_i}.sort
         highest_amount = ingr_word_nums.last
-        new_ingredient_string = ingr_word_nums.map{|num| num == 0}
         puts highest_amount
         return highest_amount
     end
+
+    def find_lowest_amount (ingredient_content)
+        ingr_word_nums = ingredient_content.split(' ').join('-').split('-').map{|i| i.to_i}.sort
+        lowest_amount = ingr_word_nums.select{|n| n > 0 }.first
+        return lowest_amount
+    end 
 
     def find_metric (ingredient_content)
 
@@ -128,7 +141,8 @@ class Scraper
         niche_metrics = [{name: "breast", kg: 0.2}, {name: "thigh", kg: 0.15}, {name: "drumstick", kg: 0.10}, {name: "leg", kg: 2.00}, {name: "steak", kg: 0.20}, {name: "chop", kg: 0.15}, {name: "wing", kg: 0.09}, {name: "sausage", kg: 0.08}]
         size_metric = [{name: "small", multiplier: 0.7}, {name: "medium", multiplier: 1}, {name: "large", multiplier: 1.3}]
 
-        grams = ingredient_content.split(' ').join('-').split('-').select{|w| w == 'g'}
+        grams = ingredient_content.split(' ').join('/').split('/').join('-').split('-').select{|w| w == 'g'}
+        # standardise using regex?
 
         if grams.length > 0
             return {kg: 0.001, multiplier: 1}
@@ -159,5 +173,16 @@ class Scraper
     end
 end
 
- 
+
+def recipe_CO2(recipe_id)
+    ingredient_CO2 = Recipe.find(recipe_id).recipe_ingredients.map{|r_i| r_i.ingredient_kgs*Ingredient.find(r_i.ingredient_id).kg_CO2_per_kg_produce}  
+    co2 = ingredient_CO2.sum/Recipe.find(recipe_id).servings
+    return co2.round(2)
+end 
+
+def recipe_CO2(recipe_id)
+    ingredient_CO2 = Recipe.find(recipe_id).recipe_ingredients.map{|r_i| r_i.ingredient_kgs*Ingredient.find(r_i.ingredient_id).kg_CO2_per_kg_produce}  
+    co2 = ingredient_CO2.sum
+    return co2.round(2)
+end 
 
