@@ -4,6 +4,7 @@ class CreateRecipes < ActiveRecord::Migration[5.2]
       t.string :name
       t.integer :servings
       t.string :website
+      t.string :image_url
 
       t.timestamps
     end
